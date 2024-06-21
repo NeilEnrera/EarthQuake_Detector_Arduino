@@ -1,0 +1,161 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+// Constants for pins
+#define LED 13           // LED
+#define BUZ 12           // BUZZER
+#define TRIG 8           // TRIGGER
+#define COPPER_PIN 9     // Copper pin connected to TRIG
+#define SAFETY_PIN 10    // Safety pin connected to TRIG
+
+// Variables for alarm system
+int buttonState = 0;
+int contactCounterTRIG = 0;   // Counter to track consecutive contacts on TRIG
+int contactCounterCopper = 0;   // Counter to track consecutive contacts on Copper pin
+const int requiredContacts = 5; // Number of required contacts to set off the alarm
+bool alertDisplayed = false; // Flag to track if the alert is displayed
+bool safeDisplayed = false; // Flag to track if the "safe" message is displayed
+unsigned long lastTriggerTime = 0; // Variable to store the last time trigger was detected
+unsigned long lastCopperTime = 0; // Variable to store the last time copper contact was detected
+const unsigned long debounceDelay = 100; // Debounce delay in milliseconds
+
+// Initialize the LCD with the I2C address 0x27 (change if your LCD has a different address)
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+void setup() {
+    // Initialize the alarm system
+    pinMode(LED, OUTPUT);
+    pinMode(BUZ, OUTPUT);
+    pinMode(TRIG, INPUT);
+    pinMode(COPPER_PIN, INPUT_PULLUP); // Internal pull-up resistor for copper pin
+    pinMode(SAFETY_PIN, INPUT_PULLUP); // Internal pull-up resistor for safety pin
+
+    // Initialize the LCD
+    lcd.begin(16, 2);
+    lcd.init();
+    lcd.backlight();
+    lcd.setCursor(0, 0); // Set the cursor to the first row, first column
+    lcd.print("EVERYTHING IS");
+    lcd.setCursor(0, 1);
+    lcd.print("SAFE!");
+}
+
+void loop() {
+    // Read the state of the trigger pin
+    buttonState = digitalRead(TRIG);
+
+    // Debounce mechanism for TRIG pin
+    if (buttonState == HIGH && millis() - lastTriggerTime > debounceDelay) {
+        contactCounterTRIG++;
+        lastTriggerTime = millis(); // Update last trigger time
+    } else if (buttonState == LOW) {
+        // Reset the counter if contact is lost
+        contactCounterTRIG = 0;
+        digitalWrite(BUZ, LOW); // Ensure buzzer is off if contact is lost
+    }
+
+    // Check if the required number of contacts on TRIG pin is detected
+    if (contactCounterTRIG >= requiredContacts) {
+        // Reset the counter after triggering the alarm
+        contactCounterTRIG = 0;
+
+        // Display "EARTHQUAKE ALERT!" on the LCD if it's not already displayed
+        if (!alertDisplayed) {
+            alertDisplayed = true;
+            safeDisplayed = false; // Clear the safeDisplayed flag
+            lcd.clear(); // Clear the LCD
+            lcd.setCursor(0, 0); // Set the cursor to the first row, first column
+            lcd.print("EARTHQUAKE"); // Display the alert message
+            lcd.setCursor(0, 1);
+            lcd.print("ALERT!");
+
+            // Turn LED & BUZZER ON & OFF 50 times
+            for (int i = 0; i < 50; i++) {
+                digitalWrite(LED, HIGH);
+                digitalWrite(BUZ, HIGH);
+                delay(50);
+                digitalWrite(LED, LOW);
+                digitalWrite(BUZ, LOW);
+                delay(50);
+
+                // Check if contact is lost during the alarm sequence
+                if (digitalRead(TRIG) == LOW) {
+                    // Immediately turn off and break the loop if contact is lost
+                    digitalWrite(BUZ, LOW);
+                    digitalWrite(LED, LOW);
+                    break;
+                }
+            }
+        }
+    }
+
+    // Debounce mechanism for Copper pin
+    if (digitalRead(COPPER_PIN) == LOW && millis() - lastCopperTime > debounceDelay) {
+        contactCounterCopper++;
+        lastCopperTime = millis(); // Update last copper contact time
+    } else if (digitalRead(COPPER_PIN) == HIGH) {
+        // Reset the counter if contact is lost
+        contactCounterCopper = 0;
+    }
+
+    // Check if the required number of contacts on Copper pin is detected
+    if (contactCounterCopper >= requiredContacts) {
+        // Reset the counter after triggering the alarm
+        contactCounterCopper = 0;
+
+        // Display "EARTHQUAKE ALERT!" on the LCD if it's not already displayed
+        if (!alertDisplayed) {
+            alertDisplayed = true;
+            safeDisplayed = false;
+            lcd.clear(); // Clear the LCD
+            lcd.setCursor(0, 0); // Set the cursor to the first row, first column
+            lcd.print("EARTHQUAKE"); // Display the alert message
+            lcd.setCursor(0, 1);
+            lcd.print("ALERT!");
+
+            // Turn LED & BUZZER ON & OFF 50 times
+            for (int i = 0; i < 50; i++) {
+                digitalWrite(LED, HIGH);
+                digitalWrite(BUZ, HIGH);
+                delay(50);
+                digitalWrite(LED, LOW);
+                digitalWrite(BUZ, LOW);
+                delay(50);
+
+                // Check if contact is lost during the alarm sequence
+                if (digitalRead(COPPER_PIN) == HIGH) {
+                    // Immediately break the loop if contact is still detected
+                    break;
+                }
+            }
+        }
+    }
+
+    // Check if both copper and safety pins are in contact
+    if (digitalRead(COPPER_PIN) == LOW && digitalRead(SAFETY_PIN) == LOW) {
+        // Display "EARTHQUAKE ALERT!" on the LCD if it's not already displayed
+        if (!alertDisplayed) {
+            alertDisplayed = true;
+            safeDisplayed = false;
+            lcd.clear(); // Clear the LCD
+            lcd.setCursor(0, 0); // Set the cursor to the first row, first column
+            lcd.print("EARTHQUAKE"); // Display the alert message
+            lcd.setCursor(0, 1);
+            lcd.print("ALERT!");
+        }
+    } else {
+        // Display "EVERYTHING IS SAFE" after the earthquake
+        if (alertDisplayed && !safeDisplayed) {
+            safeDisplayed = true;
+            alertDisplayed = false;
+            lcd.clear(); // Clear the LCD
+            lcd.setCursor(0, 0); // Set the cursor to the first row, first column
+            lcd.print("EVERYTHING IS"); // Display the safe message
+            lcd.setCursor(0, 1);
+            lcd.print("SAFE!");
+        }
+    }
+
+    // Short delay for debounce stability and to prevent excessive updates
+    delay(50);
+}
